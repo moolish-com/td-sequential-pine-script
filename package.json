@@ -1,0 +1,11 @@
+{
+  "name": "td-sequential-pine-script",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TD Sequential indicator for TradingView (Pine Script v6) with a Node check that proves the logic against fixtures.",
+  "type": "module",
+  "scripts": { "test": "node reference/check.mjs" },
+  "license": "MIT",
+  "homepage": "https://moolish.com/tools/td-sequential-counter/",
+  "engines": { "node": ">=20" }
+}

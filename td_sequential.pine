@@ -1,0 +1,191 @@
+// This Pine Script(R) code is subject to the terms of the MIT License.
+// Copyright (c) 2026 Moolish. https://github.com/moolish-com/td-sequential-pine-script
+//
+// TD Sequential: setup, countdown, TDST levels. Implements SPEC.md from the repository.
+// Moolish is not affiliated with, endorsed by or sponsored by Tom DeMark or DeMARK Analytics.
+// TD Sequential is a method created by Tom DeMark, and DeMARK is a trademark of DeMARK Analytics.
+// Educational software, not financial advice. A count describes past prices; it is not a prediction.
+//@version=6
+indicator("TD Sequential (setup, countdown, TDST)", shorttitle="TD Seq", overlay=true, max_labels_count=500, max_lines_count=100)
+
+// ---------------------------------------------------------------- inputs
+G_SETUP  = "Setup"
+G_CD     = "Countdown"
+G_LEVELS = "TDST levels"
+G_INFO   = "Information only"
+G_LABELS = "Label limits"
+G_COLORS = "Colours"
+
+showSetup    = input.bool(true, "Show setup labels", group=G_SETUP)
+setupMode    = input.string("1-9", "Setup labels", options=["1-9", "9 only", "Eco (1/6/8/9/13)"], group=G_SETUP, tooltip="Eco shows only the checkpoint numbers 1, 6, 8, 9 and 13.")
+showCd       = input.bool(true, "Show countdown labels", group=G_CD)
+cdMode       = input.string("1-13", "Countdown labels", options=["1-13", "13 only", "Eco (1/6/8/9/13)"], group=G_CD)
+showDeferred = input.bool(true, "Show deferred 13 marker (+)", group=G_CD, tooltip="A bar that qualifies as the 13th but fails the 13-versus-8 test is marked with +.")
+showTdst     = input.bool(true, "Show TDST resistance and support", group=G_LEVELS, tooltip="Dotted plots of the latest active level. Levels use the plain 9-bar high (resistance) and low (support) of a completed setup 9.")
+showPerfect  = input.bool(true, "Mark perfected setups (adds P to the 9)", group=G_INFO, tooltip="Information only. Never changes a count.")
+showFlip     = input.bool(false, "Show price flip", group=G_INFO, tooltip="Information only. Never changes a count; a setup does not need a flip to start.")
+maxLabels    = input.int(300, "Max labels kept", minval=20, maxval=480, group=G_LABELS, tooltip="Oldest labels are deleted first.")
+labelsBack   = input.int(2000, "Draw labels this many bars back", minval=50, maxval=20000, group=G_LABELS)
+
+cSellSetup = input.color(#008000, "Sell setup", group=G_COLORS)
+cBuySetup  = input.color(#C95995, "Buy setup", group=G_COLORS)
+cSell9_13  = input.color(#FF00FF, "Sell 9 / 13", group=G_COLORS)
+cBuy9_13   = input.color(#00FFFF, "Buy 9 / 13", group=G_COLORS)
+cSellCd    = input.color(#00FFFF, "Sell countdown", group=G_COLORS)
+cBuyCd     = input.color(#FF8000, "Buy countdown", group=G_COLORS)
+cRes       = input.color(#FFFF00, "TDST resistance", group=G_COLORS)
+cSup       = input.color(#00BCD4, "TDST support", group=G_COLORS)
+
+// ---------------------------------------------------------------- helpers
+showNum(string mode, int n, int full) =>
+    mode == "Eco (1/6/8/9/13)" ? (n == 1 or n == 6 or n == 8 or n == 9 or n == 13)
+      : (mode == "9 only" or mode == "13 only") ? n == full
+      : true
+
+// Add a level unless non-positive or a duplicate of an active one; keep at most 20.
+addLevel(array<float> prices, array<bool> actives, float price) =>
+    bool dup = false
+    int n = array.size(prices)
+    if n > 0
+        for k = 0 to n - 1
+            if array.get(actives, k) and array.get(prices, k) == price
+                dup := true
+    if price > 0 and not dup
+        array.push(prices, price)
+        array.push(actives, true)
+        if array.size(prices) > 20
+            array.shift(prices)
+            array.shift(actives)
+
+// Break every active level; returns true when the latest level was the one broken.
+breakLevels(array<float> prices, array<bool> actives, bool isResistance) =>
+    bool latestBroken = false
+    int n = array.size(prices)
+    if n > 0
+        for k = 0 to n - 1
+            if array.get(actives, k)
+                float p = array.get(prices, k)
+                bool broken = isResistance ? (close > p or low > p) : (close < p or high < p)
+                if broken
+                    array.set(actives, k, false)
+                    if k == n - 1
+                        latestBroken := true
+    latestBroken
+
+latestActive(array<float> prices, array<bool> actives) =>
+    int n = array.size(prices)
+    n > 0 and array.get(actives, n - 1) ? array.get(prices, n - 1) : na
+
+contrastText(color c) => c == cSellSetup or c == cBuySetup ? color.white : color.black
+
+var array<label> drawn = array.new<label>()
+drawLabel(float y, string txt, color bg, bool above) =>
+    label l = label.new(bar_index, y, txt, yloc=yloc.price, style=above ? label.style_label_down : label.style_label_up, color=bg, textcolor=contrastText(bg), size=size.small)
+    array.push(drawn, l)
+    while array.size(drawn) > maxLabels
+        label.delete(array.shift(drawn))
+
+// ---------------------------------------------------------------- state (var rolls back on realtime ticks)
+var int buySetup = 0
+var int sellSetup = 0
+var int buyCd = 0
+var int sellCd = 0
+var float buyEightClose = na
+var float sellEightClose = na
+var array<float> resPrices = array.new<float>()
+var array<bool> resActive = array.new<bool>()
+var array<float> supPrices = array.new<float>()
+var array<bool> supActive = array.new<bool>()
+
+// ---------------------------------------------------------------- 1. setup
+buySetup := bar_index >= 4 and close < close[4] ? buySetup + 1 : 0
+sellSetup := bar_index >= 4 and close > close[4] ? sellSetup + 1 : 0
+buy9 = buySetup == 9
+sell9 = sellSetup == 9
+
+// ---------------------------------------------------------------- 2. TDST levels
+hi9 = ta.highest(high, 9)
+lo9 = ta.lowest(low, 9)
+if buy9
+    addLevel(resPrices, resActive, hi9)
+if sell9
+    addLevel(supPrices, supActive, lo9)
+resBroken = breakLevels(resPrices, resActive, true)
+supBroken = breakLevels(supPrices, supActive, false)
+resistance = latestActive(resPrices, resActive)
+support = latestActive(supPrices, supActive)
+
+// ---------------------------------------------------------------- 3. countdown
+buyQual = bar_index >= 2 and close <= low[2]
+sellQual = bar_index >= 2 and close >= high[2]
+buyTest = low <= buyEightClose
+sellTest = high >= sellEightClose
+buyDeferred = false
+sellDeferred = false
+int prevBuyCd = buyCd
+int prevSellCd = sellCd
+
+if buy9
+    buyCd := buyQual ? 1 : 0
+else if sell9 or na(resistance)
+    buyCd := 14
+else if math.abs(prevBuyCd) == 12 and buyQual and not buyTest
+    buyCd := -12
+    buyDeferred := true
+else if buyQual
+    buyCd := math.abs(prevBuyCd) + 1
+else
+    buyCd := prevBuyCd == 0 ? 0 : -math.abs(prevBuyCd)
+if buyCd == 8
+    buyEightClose := close
+
+if sell9
+    sellCd := sellQual ? 1 : 0
+else if buy9 or na(support)
+    sellCd := 14
+else if math.abs(prevSellCd) == 12 and sellQual and not sellTest
+    sellCd := -12
+    sellDeferred := true
+else if sellQual
+    sellCd := math.abs(prevSellCd) + 1
+else
+    sellCd := prevSellCd == 0 ? 0 : -math.abs(prevSellCd)
+if sellCd == 8
+    sellEightClose := close
+
+// ---------------------------------------------------------------- 4. information only
+buyPerfected = buy9 and math.min(low[1], low) < math.min(low[3], low[2])
+sellPerfected = sell9 and math.max(high[1], high) > math.max(high[3], high[2])
+bullishFlip = bar_index >= 5 and close[1] < close[5] and close > close[4]
+bearishFlip = bar_index >= 5 and close[1] > close[5] and close < close[4]
+
+// ---------------------------------------------------------------- drawing
+atr = ta.atr(14)
+canDraw = barstate.isconfirmed and last_bar_index - bar_index <= labelsBack
+
+if canDraw
+    if showSetup and sellSetup >= 1 and sellSetup <= 9 and showNum(setupMode, sellSetup, 9)
+        drawLabel(high, str.tostring(sellSetup) + (sellPerfected and showPerfect ? "P" : ""), sellSetup == 9 ? cSell9_13 : cSellSetup, true)
+    if showSetup and buySetup >= 1 and buySetup <= 9 and showNum(setupMode, buySetup, 9)
+        drawLabel(low, str.tostring(buySetup) + (buyPerfected and showPerfect ? "P" : ""), buySetup == 9 ? cBuy9_13 : cBuySetup, false)
+    if showCd and sellCd >= 1 and sellCd <= 13 and showNum(cdMode, sellCd, 13)
+        drawLabel(high + atr * 0.8, str.tostring(sellCd), sellCd == 13 ? cSell9_13 : cSellCd, true)
+    if showCd and buyCd >= 1 and buyCd <= 13 and showNum(cdMode, buyCd, 13)
+        drawLabel(low - atr * 0.8, str.tostring(buyCd), buyCd == 13 ? cBuy9_13 : cBuyCd, false)
+    if showDeferred and sellDeferred
+        drawLabel(high + atr * 0.8, "+", cSellCd, true)
+    if showDeferred and buyDeferred
+        drawLabel(low - atr * 0.8, "+", cBuyCd, false)
+
+plot(showTdst ? resistance : na, "TDST resistance", color=cRes, style=plot.style_circles, linewidth=1)
+plot(showTdst ? support : na, "TDST support", color=cSup, style=plot.style_circles, linewidth=1)
+plotshape(showFlip and bullishFlip, "Bullish price flip", style=shape.triangleup, location=location.belowbar, color=cBuySetup, size=size.tiny)
+plotshape(showFlip and bearishFlip, "Bearish price flip", style=shape.triangledown, location=location.abovebar, color=cSellSetup, size=size.tiny)
+
+// ---------------------------------------------------------------- alerts (use "Once per bar close")
+alertcondition(buy9, "Buy setup 9", "TD Sequential: buy setup 9 completed")
+alertcondition(sell9, "Sell setup 9", "TD Sequential: sell setup 9 completed")
+alertcondition(buyCd == 13, "Buy countdown 13", "TD Sequential: buy countdown 13 completed")
+alertcondition(sellCd == 13, "Sell countdown 13", "TD Sequential: sell countdown 13 completed")
+alertcondition(buyPerfected or sellPerfected, "Perfected setup", "TD Sequential: perfected setup 9 (information only)")
+alertcondition(resBroken or supBroken, "TDST break", "TD Sequential: the latest TDST level was broken")
