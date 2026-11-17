@@ -7,7 +7,7 @@ A free, open-source TD Sequential indicator for TradingView, written in Pine Scr
 
 ## What is TD Sequential?
 
-TD Sequential is Tom DeMark's method for spotting a stretched run of closes. A setup counts consecutive bars that close beyond the close four bars earlier; a completed 9 can start a countdown that needs 13 qualifying bars. A 9 or a 13 describes past prices and gives no direction on its own. A longer explanation is in the [TD Sequential guide](https://moolish.com/learn/td-sequential/).
+TD Sequential is Tom DeMark's method for spotting a stretched run of closes. A setup counts consecutive bars that close beyond the close four bars earlier; a completed 9 can start a countdown that needs 13 qualifying bars. A 9 or a 13 describes past prices and gives no direction on its own. A longer explanation is in the [TD Sequential guide](https://moolish.com/learn/td-sequential/?utm_medium=oss&utm_campaign=td-sequential-pine-script).
 
 ## Add it to a chart
 
@@ -87,8 +87,9 @@ This repository does not claim the script is published on TradingView. If you pu
 - [td-sequential](https://github.com/moolish-com/td-sequential): JavaScript and TypeScript (npm)
 - [td-sequential-python](https://github.com/moolish-com/td-sequential-python): Python (PyPI)
 - [td-sequential-screener](https://github.com/moolish-com/td-sequential-screener): command-line screener
-- [Free TD Sequential counter](https://moolish.com/tools/td-sequential-counter/): check a crypto pair without installing anything
-- Guides: [TD Sequential](https://moolish.com/learn/td-sequential/), [TDST levels](https://moolish.com/learn/td-sequential/tdst/), [perfected setup](https://moolish.com/learn/td-sequential/perfected-setup/)
+- [Free TD Sequential counter](https://moolish.com/tools/td-sequential-counter/?utm_medium=oss&utm_campaign=td-sequential-pine-script): check a crypto pair without installing anything
+- [Moolish](https://moolish.com/?utm_medium=oss&utm_campaign=td-sequential-pine-script): the most complete TD Sequential scanner for crypto. Every 9, 13, qualified countdown, Countdown 1 and TDST level on 1,800+ markets across timeframes, confirmed by VSA volume and 45 candlestick patterns, with Telegram alerts.
+- Guides: [TD Sequential](https://moolish.com/learn/td-sequential/?utm_medium=oss&utm_campaign=td-sequential-pine-script), [TDST levels](https://moolish.com/learn/td-sequential/tdst/?utm_medium=oss&utm_campaign=td-sequential-pine-script), [perfected setup](https://moolish.com/learn/td-sequential/perfected-setup/?utm_medium=oss&utm_campaign=td-sequential-pine-script)
 
 ## Attribution and disclaimer
 
